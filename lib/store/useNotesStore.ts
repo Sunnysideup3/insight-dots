@@ -1,85 +1,65 @@
 // lib/store/useNotesStore.ts
-import { create } from 'zustand'
-import { supabase } from '@/lib/supabase/client'
+import { create } from 'zustand';
 
-interface Note {
-    id: string
-    title: string
-    content: string
-    position_x: number
-    position_y: number
-    color: string
-    tags: string[]
+export interface Note {
+  id: string;
+  title: string;
+  content: string;
+  position_x: number;
+  position_y: number;
+  color: string;
+  tags: string[];
 }
 
 interface NotesStore {
-    notes: Note[]
-    selectedNote: Note | null
-    fetchNotes: () => Promise<void>
-    createNote: (note: Partial<Note>) => Promise<void>
-    updateNote: (id: string, updates: Partial<Note>) => Promise<void>
-    deleteNote: (id: string) => Promise<void>
-    setSelectedNote: (note: Note | null) => void
+  notes: Note[];
+  fetchNotes: () => Promise<void>;
+  createNote: (partial: Partial<Note>) => Promise<void>;
+  updateNote: (id: string, updates: Partial<Note>) => Promise<void>;
+  deleteNote: (id: string) => Promise<void>;
 }
 
 export const useNotesStore = create<NotesStore>((set, get) => ({
-    notes: [],
-    selectedNote: null,
+  notes: [],
 
-    fetchNotes: async () => {
-        const { data } = await supabase
-            .from('notes')
-            .select('*')
-            .order('created_at', { ascending: false })
+  fetchNotes: async () => {
+    const res = await fetch('/api/notes');
+    const data: Note[] = await res.json();
+    set({ notes: data });
+  },
 
-        if (data) set({ notes: data })
-    },
+  createNote: async (partial) => {
+    const noteToInsert: Partial<Note> = {
+      title: 'New Note',
+      content: '',
+      position_x: Math.random() * 500,
+      position_y: Math.random() * 500,
+      color: '#ffffff',
+      tags: [],
+      ...partial,
+    };
+    const res = await fetch('/api/notes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(noteToInsert),
+    });
+    const newNote: Note = await res.json();
+    set({ notes: [...get().notes, newNote] });
+  },
 
-    createNote: async (note) => {
-        const { data: userData } = await supabase.auth.getUser()
-        if (!userData.user) return
+  updateNote: async (id, updates) => {
+    await fetch(`/api/notes/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    set({
+      notes: get().notes.map((n) => (n.id === id ? { ...n, ...updates } : n)),
+    });
+  },
 
-        const newNote = {
-            title: 'New Note',
-            content: '',
-            position_x: Math.random() * 500,
-            position_y: Math.random() * 500,
-            color: '#ffffff',
-            tags: [],
-            ...note,
-            user_id: userData.user.id,
-        }
-
-        const { data, error } = await supabase
-            .from('notes')
-            .insert([newNote])
-            .select()
-            .single()
-
-        if (data) {
-            set({ notes: [...get().notes, data] })
-        }
-    },
-
-    updateNote: async (id, updates) => {
-        const { error } = await supabase
-            .from('notes')
-            .update(updates)
-            .eq('id', id)
-
-        if (!error) {
-            set({
-                notes: get().notes.map(note =>
-                    note.id === id ? { ...note, ...updates } : note
-                )
-            })
-        }
-    },
-
-    deleteNote: async (id) => {
-        await supabase.from('notes').delete().eq('id', id)
-        set({ notes: get().notes.filter(note => note.id !== id) })
-    },
-
-    setSelectedNote: (note) => set({ selectedNote: note }),
-}))
+  deleteNote: async (id) => {
+    await fetch(`/api/notes/${id}`, { method: 'DELETE' });
+    set({ notes: get().notes.filter((n) => n.id !== id) });
+  },
+}));
